@@ -6,14 +6,14 @@ import gspread
 import json
 from oauth2client.service_account import ServiceAccountCredentials
 
-# --- CONFIGURACIÓN INICIAL ---
-st.set_page_config(page_title="Oráculo & Ranking", page_icon="🦈", layout="wide")
+# --- CONFIGURACIÓN INICIAL (Título de la pestaña actualizado) ---
+st.set_page_config(page_title="Previsión Pesca & Ranking", page_icon="🦈", layout="wide")
 
 # ==============================================================================
 # 🎨 SECCIÓN DE ESTILO (CSS)
 # ==============================================================================
 def configurar_estilo():
-    # IMAGEN DE FONDO: Un banco de peces/atunes bajo el agua (Alta calidad)
+    # IMAGEN DE FONDO: Banco de atunes (La que pediste)
     imagen_fondo = "https://images.unsplash.com/photo-1544551763-46a013bb70d5?q=80&w=2070&auto=format&fit=crop"
     
     st.markdown(f"""
@@ -157,10 +157,11 @@ def actualizar_toda_la_hoja(df_nuevo):
 # INTERFAZ
 # ==============================================================================
 
-menu = st.sidebar.radio("Navegación", ["🔮 El Oráculo", "🏆 Ranking Capturas"])
+menu = st.sidebar.radio("Navegación", ["🔮 Previsión Pesca", "🏆 Ranking Capturas"])
 
-if menu == "🔮 El Oráculo":
-    st.markdown("<h1 style='text-align: center; color: white;'>🌊 Oráculo de Pesca</h1>", unsafe_allow_html=True)
+if menu == "🔮 Previsión Pesca":
+    # --- TÍTULO CAMBIADO AQUÍ ---
+    st.markdown("<h1 style='text-align: center; color: white;'>🌊 Previsión Pesca</h1>", unsafe_allow_html=True)
     st.markdown("---")
     
     with st.container():
