@@ -22,52 +22,62 @@ LON_MAREA_REF = -0.20
 PESCADORES = ["Lucasthefisher", "Rodrifhising", "Megifishing", "Claudyfishing"]
 ESPECIES = ["Dorada", "Lubina", "Sargo", "Mabra", "Palometón", "Anjova", "Bacoreta", "Llampuga", "Barracuda", "Palometa", "Sepia", "Pulpo", "Jurel", "Oblada", "Dentón", "Baila"]
 
-# --- CONEXIÓN GOOGLE SHEETS (V20 - DIRECTA) ---
+# --- CONEXIÓN GOOGLE SHEETS ---
 def conectar_sheet():
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        
-        # Leemos la configuración directamente
         if "gcp_service_account" not in st.secrets:
-            st.error("❌ Error: No encuentro la cabecera [gcp_service_account] en Secrets.")
-            st.stop()
-            
+            st.error("❌ Falta configuración Secrets."); st.stop()
+        
         creds_dict = st.secrets["gcp_service_account"]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
-        
-        # Abrimos la primera hoja
         return client.open("RankingPesca").get_worksheet(0)
-        
     except Exception as e:
-        st.error(f"❌ Error conectando: {e}")
-        st.stop()
+        st.error(f"❌ Error conectando: {e}"); st.stop()
 
-# --- FUNCIONES ---
+# --- FUNCIONES METEOROLÓGICAS ---
+def icono_tiempo(code):
+    # Códigos WMO de Open-Meteo
+    if code == 0: return "☀️ Despejado"
+    if code in [1, 2, 3]: return "⛅ Nuboso"
+    if code in [45, 48]: return "🌫️ Niebla"
+    if code in [51, 53, 55, 61, 63, 65]: return "🌧️ Lluvia"
+    if code >= 80: return "⛈️ Tormenta"
+    return "🌤️ Variable"
+
 def obtener_datos(lat, lon, fecha_str):
     try:
-        url_clima = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=wind_speed_10m,wind_direction_10m&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
-        url_olas = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat}&longitude={lon}&hourly=wave_height&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
+        # 1. CLIMA (Aire + Icono Cielo)
+        url_clima = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=wind_speed_10m,wind_direction_10m,temperature_2m,weather_code&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
+        
+        # 2. MARINA (Olas + Temp Agua)
+        # 'sea_surface_temperature' es la temperatura del agua
+        url_olas = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat}&longitude={lon}&hourly=wave_height,sea_surface_temperature&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
+        
+        # 3. MAREA
         url_marea = f"https://marine-api.open-meteo.com/v1/marine?latitude={LAT_MAREA_REF}&longitude={LON_MAREA_REF}&hourly=tide_height&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
+        
         return requests.get(url_clima).json(), requests.get(url_olas).json(), requests.get(url_marea).json()
-    except:
-        return None, None, None
+    except: return None, None, None
 
 def calcular_direccion(grados):
     if 45 <= grados <= 135: return "Levante (E)"
     elif 225 <= grados <= 315: return "Poniente (O)"
     return "Var."
 
+# --- FUNCIONES RANKING ---
 def cargar_ranking():
     try:
         sheet = conectar_sheet()
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
-        if not df.empty and 'Peso (kg)' in df.columns:
-            df['Peso (kg)'] = pd.to_numeric(df['Peso (kg)'], errors='coerce')
+        if df.empty: return pd.DataFrame(columns=["Fecha", "Pescador", "Especie", "Peso (kg)"])
+        df.columns = df.columns.str.strip()
+        if "Peso (kg)" not in df.columns: return pd.DataFrame(columns=["Fecha", "Pescador", "Especie", "Peso (kg)"])
+        df['Peso (kg)'] = pd.to_numeric(df['Peso (kg)'], errors='coerce').fillna(0)
         return df
-    except:
-        return pd.DataFrame(columns=["Fecha", "Pescador", "Especie", "Peso (kg)"])
+    except: return pd.DataFrame(columns=["Fecha", "Pescador", "Especie", "Peso (kg)"])
 
 def guardar_nuevo_dato(pescador, especie, peso):
     sheet = conectar_sheet()
@@ -77,10 +87,11 @@ def guardar_nuevo_dato(pescador, especie, peso):
 def actualizar_toda_la_hoja(df_nuevo):
     sheet = conectar_sheet()
     sheet.clear()
-    datos = [df_nuevo.columns.values.tolist()] + df_nuevo.values.tolist()
+    headers = df_nuevo.columns.values.tolist()
+    datos = [headers] + df_nuevo.values.tolist()
     sheet.update(datos)
 
-# --- MENÚ LATERAL ---
+# --- INTERFAZ ---
 menu = st.sidebar.radio("Navegación", ["🔮 El Oráculo", "🏆 Ranking Capturas"])
 
 if menu == "🔮 El Oráculo":
@@ -93,9 +104,12 @@ if menu == "🔮 El Oráculo":
     if st.button("🚀 VER PREVISIÓN"):
         lat, lon = ZONAS[z_nom]["lat"], ZONAS[z_nom]["lon"]
         fecha_str = fecha.strftime('%Y-%m-%d')
-        with st.spinner('Calculando...'):
+        with st.spinner('Consultando satélites...'):
             clima, olas, marea = obtener_datos(lat, lon, fecha_str)
+            
             if not clima: st.error("Error conexión"); st.stop()
+            
+            # Preparamos datos auxiliares de seguridad
             tides = [0]*24
             if marea and 'hourly' in marea: tides = marea['hourly']['tide_height']
             
@@ -103,29 +117,54 @@ if menu == "🔮 El Oráculo":
             for h in range(horas[0], horas[1]+1):
                 if h>=24: break
                 try:
+                    # Viento y Dirección
                     vv = clima['hourly']['wind_speed_10m'][h]
                     vd = clima['hourly']['wind_direction_10m'][h]
+                    dt = calcular_direccion(vd)
+                    
+                    # Temperatura Aire y Cielo
+                    temp_aire = clima['hourly']['temperature_2m'][h]
+                    cod_cielo = clima['hourly']['weather_code'][h]
+                    txt_cielo = icono_tiempo(cod_cielo)
+                    
+                    # Olas y Temperatura Agua (Puede fallar si no hay datos marinos exactos)
                     oh = olas['hourly']['wave_height'][h] if olas['hourly']['wave_height'][h] else 0.0
+                    temp_agua = olas['hourly']['sea_surface_temperature'][h] if olas['hourly']['sea_surface_temperature'][h] else "--"
+                    
+                    # Marea
                     mh = tides[h]
                 except: continue
                 
-                dt = calcular_direccion(vd)
+                # Lógica colores
                 ag = "🟤 Turbia" if (oh>0.6 and "Levante" in dt) else ("🔵 Clara" if ("Poniente" in dt or oh<0.3) else "⚪ Variable")
                 em = "🌊 Agitado" if oh>=0.4 else "💎 Planchado"
                 
                 prev = tides[h-1] if h>0 else mh
                 sig = tides[h+1] if h < 23 else mh
-                if mh>prev and mh>sig: te="🛑 PLEAMAR"; val="⛔ PARADA"
-                elif mh<prev and mh<sig: te="🛑 BAJAMAR"; val="⛔ PARADA"
-                elif sig>mh: te="⬆️ SUBIENDO"; val="✅ BUENA"
-                else: te="⬇️ BAJANDO"; val="⚠️ REGULAR"
+                if mh>prev and mh>sig: te="🛑 PLEAMAR"
+                elif mh<prev and mh<sig: te="🛑 BAJAMAR"
+                elif sig>mh: te="⬆️ SUBIENDO"
+                else: te="⬇️ BAJANDO"
+                
                 tp = "🌊 CORTA (Alta)" if mh>=0.6 else "🏖️ LARGA (Baja)"
-                res.append({"HORA":f"{h}:00", "VIENTO":f"{vv} {dt}", "OLAS":f"{oh}m", "AGUA":ag, "TIPO PLAYA":tp, "MAREA":te, "VAL.":val})
+                
+                # --- NUEVA COLUMNA COMBINADA ---
+                info_clima = f"{txt_cielo} {temp_aire}°C  |  💧Agua: {temp_agua}°C"
+
+                res.append({
+                    "HORA": f"{h}:00", 
+                    "CLIMA (Aire | Agua)": info_clima, # <--- NUEVA COLUMNA
+                    "VIENTO": f"{vv} {dt}", 
+                    "OLAS": f"{oh}m", 
+                    "AGUA": ag, 
+                    "TIPO PLAYA": tp, 
+                    "MAREA": te
+                })
+            
             st.dataframe(pd.DataFrame(res), use_container_width=True, hide_index=True)
 
 elif menu == "🏆 Ranking Capturas":
     st.title("🏆 Liga de Pesca (Nube)")
-    
     with st.expander("📝 AÑADIR NUEVA CAPTURA"):
         c1, c2 = st.columns(2)
         with c1:
@@ -135,32 +174,27 @@ elif menu == "🏆 Ranking Capturas":
             k = st.number_input("⚖️ Peso (kg)", 0.0, step=0.1, format="%.2f")
             if st.button("💾 Añadir"):
                 if k > 0:
-                    try:
-                        guardar_nuevo_dato(p, e, k)
-                        st.success("¡Guardado!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error: {e}")
+                    try: guardar_nuevo_dato(p, e, k); st.success("¡Guardado!"); st.rerun()
+                    except Exception as e: st.error(f"Error: {e}")
 
     df = cargar_ranking()
-    if not df.empty:
+    if not df.empty and "Peso (kg)" in df.columns:
         st.markdown("### 🥇 TOP 3")
-        top = df.sort_values(by="Peso (kg)", ascending=False).head(3).reset_index(drop=True)
-        c1, c2, c3 = st.columns(3)
-        if len(top)>0: c1.metric("🥇", f"{top.iloc[0]['Peso (kg)']}kg", top.iloc[0]['Pescador'])
-        if len(top)>1: c2.metric("🥈", f"{top.iloc[1]['Peso (kg)']}kg", top.iloc[1]['Pescador'])
-        if len(top)>2: c3.metric("🥉", f"{top.iloc[2]['Peso (kg)']}kg", top.iloc[2]['Pescador'])
+        try:
+            top = df.sort_values(by="Peso (kg)", ascending=False).head(3).reset_index(drop=True)
+            c1, c2, c3 = st.columns(3)
+            if len(top)>0: c1.metric("🥇", f"{top.iloc[0]['Peso (kg)']}kg", top.iloc[0]['Pescador'])
+            if len(top)>1: c2.metric("🥈", f"{top.iloc[1]['Peso (kg)']}kg", top.iloc[1]['Pescador'])
+            if len(top)>2: c3.metric("🥉", f"{top.iloc[2]['Peso (kg)']}kg", top.iloc[2]['Pescador'])
+        except: pass
 
         st.markdown("---")
         st.subheader("📝 Editar o Borrar")
         df_edit = st.data_editor(df, num_rows="dynamic", use_container_width=True, key="editor")
-
         if st.button("🔄 ACTUALIZAR GOOGLE SHEETS"):
-            with st.spinner("Sincronizando..."):
-                actualizar_toda_la_hoja(df_edit)
+            with st.spinner("Sincronizando..."): actualizar_toda_la_hoja(df_edit)
             st.success("✅ Guardado"); st.rerun()
-            
         st.markdown("---")
-        st.bar_chart(df.groupby("Pescador")["Peso (kg)"].sum())
-    else:
-        st.info("La tabla está vacía. Añade la primera captura arriba.")
+        try: st.bar_chart(df.groupby("Pescador")["Peso (kg)"].sum())
+        except: pass
+    else: st.info("Tabla vacía. Añade captura.")
