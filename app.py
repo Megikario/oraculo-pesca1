@@ -1,3 +1,20 @@
+¡Claro! Es fundamental poder corregir errores (por si alguien se emociona y pone un 0 de más en el peso 😂).
+
+Para hacer esto de la forma más moderna y cómoda posible, vamos a usar una herramienta nueva de Streamlit llamada data_editor.
+
+¿Qué hace esto? Convierte la tabla de capturas en un Excel editable.
+
+Podrás hacer clic en una celda y cambiar el peso o el nombre.
+
+Podrás seleccionar filas y borrarlas con la tecla "Supr" o un icono de papelera.
+
+Luego le das a un botón de "Guardar Cambios" y listo.
+
+Aquí tienes la Versión 10 (Con Editor de Tabla).
+
+Copia y pega todo en tu app.py:
+Python
+
 import streamlit as st
 import requests
 import pandas as pd
@@ -59,11 +76,14 @@ def guardar_captura(pescador, especie, peso):
     df.to_csv(ARCHIVO_RANKING, index=False)
     return df
 
+def actualizar_ranking_completo(nuevo_df):
+    nuevo_df.to_csv(ARCHIVO_RANKING, index=False)
+
 # --- MENÚ LATERAL ---
 menu = st.sidebar.radio("Navegación", ["🔮 El Oráculo (Previsión)", "🏆 Ranking Capturas"])
 
 # ==============================================================================
-# PANTALLA 1: EL ORÁCULO (PREVISIÓN)
+# PANTALLA 1: EL ORÁCULO
 # ==============================================================================
 if menu == "🔮 El Oráculo (Previsión)":
     st.title("🌊 Oráculo de Pesca: El Saler")
@@ -130,7 +150,6 @@ if menu == "🔮 El Oráculo (Previsión)":
 # ==============================================================================
 elif menu == "🏆 Ranking Capturas":
     st.title("🏆 Hall of Fame: Liga de Pesca")
-    st.markdown("Registra tus capturas y compite por ser el rey del Mediterráneo.")
     
     # --- FORMULARIO DE REGISTRO ---
     with st.expander("📝 REGISTRAR NUEVA CAPTURA (Click aquí)", expanded=False):
@@ -145,7 +164,8 @@ elif menu == "🏆 Ranking Capturas":
         if boton_guardar:
             if peso_input > 0:
                 guardar_captura(pescador_input, especie_input, peso_input)
-                st.success(f"¡Buena pesca {pescador_input}! {especie_input} de {peso_input}kg registrada.")
+                st.success(f"¡Registrado!")
+                st.rerun() # Recarga la página para mostrar el dato nuevo
             else:
                 st.error("❌ El peso tiene que ser mayor que 0.")
 
@@ -153,33 +173,38 @@ elif menu == "🏆 Ranking Capturas":
     df_ranking = cargar_ranking()
     
     if not df_ranking.empty:
-        # 1. EL PODIO (TOP 3 PESOS ABSOLUTOS)
+        # 1. EL PODIO
         st.markdown("### 🥇 TOP 3 PIEZAS MAYORES")
         df_sorted = df_ranking.sort_values(by="Peso (kg)", ascending=False).head(3).reset_index(drop=True)
-        
         col_oro, col_plata, col_bronce = st.columns(3)
-        
-        if len(df_sorted) > 0:
-            col_oro.metric(label="🥇 ORO", value=f"{df_sorted.iloc[0]['Peso (kg)']} kg", 
-                           delta=f"{df_sorted.iloc[0]['Pescador']} ({df_sorted.iloc[0]['Especie']})")
-        if len(df_sorted) > 1:
-            col_plata.metric(label="🥈 PLATA", value=f"{df_sorted.iloc[1]['Peso (kg)']} kg", 
-                             delta=f"{df_sorted.iloc[1]['Pescador']} ({df_sorted.iloc[1]['Especie']})")
-        if len(df_sorted) > 2:
-            col_bronce.metric(label="🥉 BRONCE", value=f"{df_sorted.iloc[2]['Peso (kg)']} kg", 
-                              delta=f"{df_sorted.iloc[2]['Pescador']} ({df_sorted.iloc[2]['Especie']})")
+        if len(df_sorted) > 0: col_oro.metric("🥇 ORO", f"{df_sorted.iloc[0]['Peso (kg)']} kg", f"{df_sorted.iloc[0]['Pescador']}")
+        if len(df_sorted) > 1: col_plata.metric("🥈 PLATA", f"{df_sorted.iloc[1]['Peso (kg)']} kg", f"{df_sorted.iloc[1]['Pescador']}")
+        if len(df_sorted) > 2: col_bronce.metric("🥉 BRONCE", f"{df_sorted.iloc[2]['Peso (kg)']} kg", f"{df_sorted.iloc[2]['Pescador']}")
 
-        # 2. TABLA COMPLETA
+        # 2. EDITOR DE TABLA (LO NUEVO)
         st.markdown("---")
-        st.markdown("### 📊 Historial Completo")
-        # Colorear según pescador para que quede bonito
-        st.dataframe(df_ranking.sort_values(by="Fecha", ascending=False), use_container_width=True, hide_index=True)
+        st.subheader("📊 Historial y Edición")
+        st.info("💡 **Tip:** Haz doble click en una celda para editar el peso o el nombre. Selecciona una fila y pulsa 'Supr' (o el icono de papelera) para borrarla.")
         
-        # 3. ESTADÍSTICAS POR PESCADOR
+        # TABLA EDITABLE
+        df_editado = st.data_editor(
+            df_ranking, 
+            num_rows="dynamic", 
+            use_container_width=True,
+            key="editor_datos"
+        )
+
+        # Botón para guardar los cambios hechos en la tabla
+        if st.button("💾 GUARDAR CAMBIOS DE LA TABLA"):
+            actualizar_ranking_completo(df_editado)
+            st.success("✅ Tabla actualizada correctamente.")
+            st.rerun()
+
+        # 3. ESTADÍSTICAS
         st.markdown("---")
-        st.markdown("### 🎣 Total Kilos por Pescador")
+        st.subheader("🎣 Total Kilos por Pescador")
         df_stats = df_ranking.groupby("Pescador")["Peso (kg)"].sum().sort_values(ascending=False)
         st.bar_chart(df_stats)
         
     else:
-        st.info("Todavía no hay capturas registradas. ¡Sé el primero!")
+        st.info("Todavía no hay capturas registradas.")
