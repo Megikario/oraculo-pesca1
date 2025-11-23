@@ -3,21 +3,32 @@ import requests
 import pandas as pd
 from datetime import datetime
 
-# --- CONFIGURACIÓN DE PÁGINA (MODO ANCHO PARA QUE QUEPA LA TABLA) ---
-st.set_page_config(page_title="Oráculo El Saler", page_icon="🎣", layout="wide")
+# --- CONFIGURACIÓN ---
+st.set_page_config(page_title="Oráculo Multi-Zona", page_icon="🎣", layout="wide")
 
-# --- COORDENADAS (Las que funcionan) ---
-LAT_PESCA = 39.37
-LON_PESCA = -0.25
-LAT_MAREA = 39.40   # Mar adentro (para que no falle la marea)
-LON_MAREA = -0.20
+# --- 1. BASE DE DATOS DE ZONAS (COORDENADAS EXACTAS) ---
+ZONAS = {
+    "El Saler":           {"lat": 39.37, "lon": -0.25},
+    "Pinedo":             {"lat": 39.42, "lon": -0.33},
+    "Marina (Malvarrosa)":{"lat": 39.47, "lon": -0.32},
+    "Alboraya":           {"lat": 39.50, "lon": -0.31},
+    "Faro de Cullera":    {"lat": 39.18, "lon": -0.22} 
+}
+
+# Coordenada FIJA para la marea (Usamos la boya de Valencia que nunca falla)
+# La marea es igual en toda la costa, así aseguramos que no haya errores de "tierra"
+LAT_MAREA_REF = 39.40 
+LON_MAREA_REF = -0.20
 
 # --- FUNCIONES ---
-def obtener_datos(fecha_str):
+def obtener_datos(lat, lon, fecha_str):
     try:
-        url_clima = f"https://api.open-meteo.com/v1/forecast?latitude={LAT_PESCA}&longitude={LON_PESCA}&hourly=wind_speed_10m,wind_direction_10m&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
-        url_olas = f"https://marine-api.open-meteo.com/v1/marine?latitude={LAT_PESCA}&longitude={LON_PESCA}&hourly=wave_height&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
-        url_marea = f"https://marine-api.open-meteo.com/v1/marine?latitude={LAT_MAREA}&longitude={LON_MAREA}&hourly=tide_height&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
+        # Clima y Olas (Específico de la zona elegida)
+        url_clima = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=wind_speed_10m,wind_direction_10m&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
+        url_olas = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat}&longitude={lon}&hourly=wave_height&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
+        
+        # Marea (General de la costa)
+        url_marea = f"https://marine-api.open-meteo.com/v1/marine?latitude={LAT_MAREA_REF}&longitude={LON_MAREA_REF}&hourly=tide_height&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
         
         return requests.get(url_clima).json(), requests.get(url_olas).json(), requests.get(url_marea).json()
     except:
@@ -29,26 +40,37 @@ def calcular_direccion(grados):
     return "Var."
 
 # --- INTERFAZ ---
-st.title("🎣 Oráculo de Pesca: El Saler")
-st.markdown("**Versión Colab:** Tabla completa con tipo de playa y valoración.")
+st.title("🎣 Oráculo de Pesca: Comunidad Valenciana")
+st.markdown("Previsión inteligente multizona.")
 
-col1, col2 = st.columns(2)
+# --- SELECTORES ---
+col1, col2, col3 = st.columns(3)
+
 with col1:
-    fecha = st.date_input("📅 Día de pesca:", datetime.now())
+    # AQUÍ ESTÁ LA NOVEDAD: EL SELECTOR DE ZONA
+    zona_nombre = st.selectbox("📍 ¿Dónde vamos hoy?", list(ZONAS.keys()))
+    
 with col2:
-    horas = st.slider("🕒 Horario:", 0, 23, (6, 12))
+    fecha = st.date_input("📅 Día:", datetime.now())
+    
+with col3:
+    horas = st.slider("🕒 Horas:", 0, 23, (6, 12))
 
-if st.button("🚀 GENERAR TABLA"):
+# Recuperamos las coordenadas de la zona elegida
+lat_zona = ZONAS[zona_nombre]["lat"]
+lon_zona = ZONAS[zona_nombre]["lon"]
+
+if st.button(f"🚀 VER PREVISIÓN PARA {zona_nombre.upper()}"):
     fecha_str = fecha.strftime('%Y-%m-%d')
     
-    with st.spinner('Calculando mareas y vientos...'):
-        clima, olas_data, marea = obtener_datos(fecha_str)
+    with st.spinner(f'Analizando satélites sobre {zona_nombre}...'):
+        # Pasamos las coordenadas de la zona elegida a la función
+        clima, olas_data, marea = obtener_datos(lat_zona, lon_zona, fecha_str)
         
         if not clima or not olas_data:
-            st.error("Error de conexión.")
+            st.error("Error de conexión con el satélite.")
             st.stop()
 
-        # Datos seguros de marea
         tides = [0]*24
         if marea and 'hourly' in marea:
             tides = marea['hourly']['tide_height']
@@ -58,7 +80,6 @@ if st.button("🚀 GENERAR TABLA"):
         for h in range(horas[0], horas[1] + 1):
             if h >= 24: break
             
-            # --- 1. DATOS BÁSICOS ---
             try:
                 v_vel = clima['hourly']['wind_speed_10m'][h]
                 v_dir = clima['hourly']['wind_direction_10m'][h]
@@ -68,19 +89,17 @@ if st.button("🚀 GENERAR TABLA"):
 
             dir_txt = calcular_direccion(v_dir)
 
-            # --- 2. LÓGICA DE NEGOCIO (TUS REGLAS) ---
-            
-            # A) Claridad
+            # LÓGICA DE CLARIDAD
+            # Cullera tiene zonas de roca, pero la regla del agua clara sirve igual
             if ola_h > 0.6 and "Levante" in dir_txt: agua = "🟤 Turbia"
             elif "Poniente" in dir_txt or ola_h < 0.3: agua = "🔵 Clara"
             else: agua = "⚪ Variable"
 
-            # B) Estado del Mar (Agitado vs Planchado)
+            # ESTADO MAR
             if ola_h >= 0.4: estado_mar = "🌊 Agitado"
             else: estado_mar = "💎 Planchado"
 
-            # C) Marea y Tipo de Playa
-            # Calculamos tendencia
+            # MAREA
             prev = tides[h-1] if h > 0 else marea_h
             sig = tides[h+1] if h < 23 else marea_h
             
@@ -97,11 +116,10 @@ if st.button("🚀 GENERAR TABLA"):
                 tendencia = "⬇️ BAJANDO"
                 val = "⚠️ REGULAR"
 
-            # Tipo de playa según altura (0.6m es el umbral aprox en El Saler)
+            # TIPO PLAYA (La lógica sirve para playas de arena)
             if marea_h >= 0.6: tipo_playa = "🌊 CORTA (Alta)"
             else: tipo_playa = "🏖️ LARGA (Baja)"
 
-            # --- 3. GUARDAR FILA ---
             resultados.append({
                 "HORA": f"{h}:00",
                 "VIENTO": f"{v_vel} kmh {dir_txt}",
@@ -113,15 +131,15 @@ if st.button("🚀 GENERAR TABLA"):
                 "VAL.": val
             })
 
-        # --- MOSTRAR TABLA ---
-        df = pd.DataFrame(resultados)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        # Mostrar Tabla
+        st.dataframe(pd.DataFrame(resultados), use_container_width=True, hide_index=True)
 
-        # --- RESUMEN DEBAJO (IGUAL QUE EN COLAB) ---
-        st.markdown("---")
+        # Mapa pequeño para confirmar ubicación
+        st.map(pd.DataFrame({'lat': [lat_zona], 'lon': [lon_zona]}), zoom=11)
+
+        # Resumen
         st.info("""
-        **ℹ️ RESUMEN RÁPIDO:**
-        * 🌊 **Agitado** + 🟤 **Turbia** = Pescado confiado (Entra a comer).
-        * 💎 **Planchado** + 🔵 **Clara** = Pescado difícil (Hilo fino).
-        * ✅ **BUENA (Subiendo):** El agua tapa la orilla (**Playa Corta**). Pesca CERCA.
-        """)
+        **ℹ️ NOTA ZONA:**
+        * Los datos de **Viento y Olas** son exactos de **{}**.
+        * La **Marea** es la general de Valencia (Válida para toda la costa).
+        """.format(zona_nombre))
