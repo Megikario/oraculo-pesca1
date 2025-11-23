@@ -3,7 +3,6 @@ import requests
 import pandas as pd
 from datetime import datetime
 import gspread
-import json
 from oauth2client.service_account import ServiceAccountCredentials
 
 # --- CONFIGURACIÓN ---
@@ -21,51 +20,30 @@ LAT_MAREA_REF = 39.40
 LON_MAREA_REF = -0.20
 
 PESCADORES = ["Lucasthefisher", "Rodrifhising", "Megifishing", "Claudyfishing"]
-ESPECIES = [
-    "Dorada", "Lubina (Llobarro)", "Sargo", "Mabra (Herrera)", 
-    "Palometón", "Anjova (Dorado)", "Bacoreta", "Llampuga", 
-    "Barracuda (Espetón)", "Palometa (Blanca)", "Sepia", "Pulpo", 
-    "Jurel", "Oblada", "Dentón", "Baila"
-]
+ESPECIES = ["Dorada", "Lubina", "Sargo", "Mabra", "Palometón", "Anjova", "Bacoreta", "Llampuga", "Barracuda", "Palometa", "Sepia", "Pulpo", "Jurel", "Oblada", "Dentón", "Baila"]
 
-# --- CONEXIÓN GOOGLE SHEETS (V19 - INTELIGENTE / TODOTERRENO) ---
+# --- CONEXIÓN GOOGLE SHEETS (V20 - DIRECTA) ---
 def conectar_sheet():
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         
-        # 1. Comprobamos si existen los secrets
+        # Leemos la configuración directamente
         if "gcp_service_account" not in st.secrets:
-            st.error("❌ No encuentro [gcp_service_account] en tus Secrets.")
+            st.error("❌ Error: No encuentro la cabecera [gcp_service_account] en Secrets.")
             st.stop()
             
-        secrets_section = st.secrets["gcp_service_account"]
-
-        # 2. DETECTOR AUTOMÁTICO DE FORMATO
-        # Opción A: ¿Usaste el método del bloque 'info'?
-        if "info" in secrets_section:
-            json_texto = secrets_section["info"]
-            creds_dict = json.loads(json_texto)
-        
-        # Opción B: ¿Usaste el método de pegar los datos sueltos (type, project_id...)?
-        elif "type" in secrets_section and secrets_section["type"] == "service_account":
-            creds_dict = secrets_section
-            
-        else:
-            st.error("❌ Formato de Secrets no reconocido. Asegúrate de haber pegado el JSON.")
-            st.stop()
-        
-        # 3. Conectamos
+        creds_dict = st.secrets["gcp_service_account"]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         
-        # 4. Abrimos la PRIMERA hoja (se llame como se llame)
+        # Abrimos la primera hoja
         return client.open("RankingPesca").get_worksheet(0)
         
     except Exception as e:
-        st.error(f"❌ Error técnico conectando con Google: {e}")
+        st.error(f"❌ Error conectando: {e}")
         st.stop()
 
-# --- FUNCIONES CLIMA ---
+# --- FUNCIONES ---
 def obtener_datos(lat, lon, fecha_str):
     try:
         url_clima = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=wind_speed_10m,wind_direction_10m&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
@@ -80,13 +58,12 @@ def calcular_direccion(grados):
     elif 225 <= grados <= 315: return "Poniente (O)"
     return "Var."
 
-# --- FUNCIONES RANKING ---
 def cargar_ranking():
     try:
         sheet = conectar_sheet()
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
-        if not df.empty:
+        if not df.empty and 'Peso (kg)' in df.columns:
             df['Peso (kg)'] = pd.to_numeric(df['Peso (kg)'], errors='coerce')
         return df
     except:
@@ -160,10 +137,10 @@ elif menu == "🏆 Ranking Capturas":
                 if k > 0:
                     try:
                         guardar_nuevo_dato(p, e, k)
-                        st.success("¡Guardado correctamente en la nube!")
+                        st.success("¡Guardado!")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error guardando: {e}")
+                        st.error(f"Error: {e}")
 
     df = cargar_ranking()
     if not df.empty:
@@ -176,14 +153,12 @@ elif menu == "🏆 Ranking Capturas":
 
         st.markdown("---")
         st.subheader("📝 Editar o Borrar")
-        st.info("Edita las celdas o borra filas (tecla Supr) y dale al botón de abajo.")
-        
         df_edit = st.data_editor(df, num_rows="dynamic", use_container_width=True, key="editor")
 
         if st.button("🔄 ACTUALIZAR GOOGLE SHEETS"):
             with st.spinner("Sincronizando..."):
                 actualizar_toda_la_hoja(df_edit)
-            st.success("✅ Guardado en Drive"); st.rerun()
+            st.success("✅ Guardado"); st.rerun()
             
         st.markdown("---")
         st.bar_chart(df.groupby("Pescador")["Peso (kg)"].sum())
