@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 from datetime import datetime
 import gspread
+import json
 from oauth2client.service_account import ServiceAccountCredentials
 
 # --- CONFIGURACIÓN ---
@@ -27,19 +28,29 @@ ESPECIES = [
     "Jurel", "Oblada", "Dentón", "Baila"
 ]
 
-# --- CONEXIÓN GOOGLE SHEETS (CORREGIDA) ---
+# --- CONEXIÓN GOOGLE SHEETS (V18 - LECTURA SEGURA DE INFO) ---
 def conectar_sheet():
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds_dict = st.secrets["gcp_service_account"]
+        
+        # 1. Recuperamos el bloque de texto "info" de los secrets
+        if "gcp_service_account" in st.secrets and "info" in st.secrets["gcp_service_account"]:
+            json_texto = st.secrets["gcp_service_account"]["info"]
+            # 2. Lo convertimos en diccionario
+            creds_dict = json.loads(json_texto)
+        else:
+            st.error("⚠️ Error en Secrets: Falta la estructura [gcp_service_account] info = \"\"\" ... \"\"\"")
+            st.stop()
+        
+        # 3. Conectamos
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         
-        # CAMBIO IMPORTANTE: Cogemos la hoja 0 (la primera), se llame como se llame
+        # 4. Abrimos la hoja (la primera que encuentre, hoja 0)
         return client.open("RankingPesca").get_worksheet(0)
         
     except Exception as e:
-        st.error(f"❌ Error conectando: {e}")
+        st.error(f"❌ Error conectando con Google: {e}")
         st.stop()
 
 # --- FUNCIONES ---
