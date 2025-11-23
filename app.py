@@ -7,71 +7,72 @@ import json
 from oauth2client.service_account import ServiceAccountCredentials
 
 # --- CONFIGURACIÓN INICIAL ---
-st.set_page_config(page_title="Oráculo & Ranking", page_icon="🎣", layout="wide")
+st.set_page_config(page_title="Oráculo & Ranking", page_icon="🦈", layout="wide")
 
 # ==============================================================================
-# 🎨 SECCIÓN DE ESTILO (CSS) - AQUÍ OCURRE LA MAGIA VISUAL
+# 🎨 SECCIÓN DE ESTILO (CSS)
 # ==============================================================================
 def configurar_estilo():
-    # URL de la imagen de fondo (puedes cambiarla por otra que te guste)
-    imagen_fondo = "https://images.unsplash.com/photo-1533601017-dc61895e03c0?q=80&w=2070&auto=format&fit=crop"
+    # IMAGEN DE FONDO: Un banco de peces/atunes bajo el agua (Alta calidad)
+    imagen_fondo = "https://images.unsplash.com/photo-1544551763-46a013bb70d5?q=80&w=2070&auto=format&fit=crop"
     
     st.markdown(f"""
     <style>
-    /* 1. PONER IMAGEN DE FONDO */
+    /* 1. FONDO DE PANTALLA */
     .stApp {{
         background-image: url("{imagen_fondo}");
         background-attachment: fixed;
         background-size: cover;
+        background-position: center;
     }}
 
-    /* 2. BARRA LATERAL (SIDEBAR) SEMI-TRANSPARENTE */
+    /* 2. BARRA LATERAL (SIDEBAR) */
     [data-testid="stSidebar"] {{
-        background-color: rgba(0, 20, 40, 0.85); /* Azul muy oscuro transparente */
+        background-color: rgba(0, 10, 30, 0.9); /* Azul casi negro */
         border-right: 1px solid rgba(255, 255, 255, 0.1);
     }}
     
-    /* 3. COLORES DE TEXTO PARA QUE SE LEAN BIEN SOBRE EL FONDO */
-    h1, h2, h3, h4, p, label {{
+    /* 3. TEXTOS (BLANCO CON SOMBRA FUERTE PARA LEER BIEN) */
+    h1, h2, h3, h4, p, label, .stMarkdown, div {{
         color: #FFFFFF !important;
-        text-shadow: 2px 2px 4px #000000; /* Sombra negra para leer mejor */
+        text-shadow: 0px 0px 5px #000000, 0px 0px 10px #000000; /* Doble sombra */
     }}
     
-    /* 4. BOTONES PERSONALIZADOS */
+    /* 4. BOTONES */
     div.stButton > button {{
-        background-color: #00A8E8;
+        background-color: #007EA7;
         color: white;
-        border-radius: 10px;
-        border: none;
-        padding: 10px 24px;
+        border: 2px solid #003459;
+        border-radius: 8px;
         font-weight: bold;
-        transition: 0.3s;
     }}
     div.stButton > button:hover {{
-        background-color: #0077B6;
-        border: 2px solid white;
-        transform: scale(1.05);
+        background-color: #00A8E8;
+        border-color: white;
     }}
 
     /* 5. CAJAS DE DATOS (METRICAS) */
     [data-testid="stMetricValue"] {{
-        color: #00E5FF !important; /* Color Cyan para los números */
+        color: #4CC9F0 !important; /* Azul eléctrico */
+        text-shadow: 2px 2px 0px #000000;
     }}
-    
-    /* 6. TABLAS */
-    .stDataFrame {{
-        background-color: rgba(0, 0, 0, 0.6); /* Fondo negro transparente para tablas */
+    [data-testid="stMetricLabel"] {{
+        color: #E0E0E0 !important;
+    }}
+
+    /* 6. TABLAS (FONDO OSCURO) */
+    .stDataFrame, [data-testid="stDataFrame"] {{
+        background-color: rgba(0, 0, 0, 0.7);
         border-radius: 10px;
         padding: 10px;
     }}
     </style>
     """, unsafe_allow_html=True)
 
-# Aplicamos el estilo nada más empezar
 configurar_estilo()
 
 # ==============================================================================
-# LÓGICA DEL PROGRAMA (VARIABLES Y FUNCIONES)
+# LÓGICA (VARIABLES Y FUNCIONES)
 # ==============================================================================
 
 ZONAS = {
@@ -92,11 +93,20 @@ def conectar_sheet():
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         if "gcp_service_account" not in st.secrets:
             st.error("❌ Falta Secrets."); st.stop()
-        creds_dict = st.secrets["gcp_service_account"]
+        
+        # Lógica inteligente para detectar formato
+        secrets_section = st.secrets["gcp_service_account"]
+        if "info" in secrets_section:
+            creds_dict = json.loads(secrets_section["info"])
+        elif "type" in secrets_section:
+            creds_dict = secrets_section
+        else:
+            st.error("❌ Formato Secrets desconocido."); st.stop()
+            
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         return client.open("RankingPesca").get_worksheet(0)
-    except Exception as e: st.error(f"Error: {e}"); st.stop()
+    except Exception as e: st.error(f"Error Google: {e}"); st.stop()
 
 def icono_tiempo(code):
     if code == 0: return "☀️ Despejado"
@@ -144,26 +154,25 @@ def actualizar_toda_la_hoja(df_nuevo):
     sheet.update(datos)
 
 # ==============================================================================
-# INTERFAZ GRÁFICA
+# INTERFAZ
 # ==============================================================================
 
 menu = st.sidebar.radio("Navegación", ["🔮 El Oráculo", "🏆 Ranking Capturas"])
 
 if menu == "🔮 El Oráculo":
-    st.markdown("<h1 style='text-align: center;'>🌊 Oráculo de Pesca: El Saler</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; color: white;'>🌊 Oráculo de Pesca</h1>", unsafe_allow_html=True)
     st.markdown("---")
     
-    # Usamos contenedores para agrupar visualmente
     with st.container():
         c1, c2, c3 = st.columns(3)
-        with c1: z_nom = st.selectbox("📍 Selecciona Zona", list(ZONAS.keys()))
+        with c1: z_nom = st.selectbox("📍 Zona", list(ZONAS.keys()))
         with c2: fecha = st.date_input("📅 Fecha", datetime.now())
-        with c3: horas = st.slider("🕒 Horario", 0, 23, (6, 12))
+        with c3: horas = st.slider("🕒 Horas", 0, 23, (6, 12))
 
     if st.button("🚀 VER PREVISIÓN"):
         lat, lon = ZONAS[z_nom]["lat"], ZONAS[z_nom]["lon"]
         fecha_str = fecha.strftime('%Y-%m-%d')
-        with st.spinner('📡 Conectando con boyas meteorológicas...'):
+        with st.spinner('📡 Escaneando el mar...'):
             clima, olas, marea = obtener_datos(lat, lon, fecha_str)
             
             if not clima: st.error("Error conexión"); st.stop()
@@ -210,7 +219,7 @@ if menu == "🔮 El Oráculo":
             st.dataframe(pd.DataFrame(res), use_container_width=True, hide_index=True)
             
             st.markdown("---")
-            st.caption(f"📍 Mapa de zona: {z_nom}")
+            st.caption(f"📍 Mapa: {z_nom}")
             st.map(pd.DataFrame({'lat': [lat], 'lon': [lon]}), zoom=12)
 
 elif menu == "🏆 Ranking Capturas":
@@ -223,18 +232,17 @@ elif menu == "🏆 Ranking Capturas":
             e = st.selectbox("🐟 Especie", ESPECIES)
         with c2:
             k = st.number_input("⚖️ Peso (kg)", 0.0, step=0.1, format="%.2f")
-            if st.button("💾 GUARDAR EN NUBE"):
+            if st.button("💾 GUARDAR"):
                 if k > 0:
                     try: guardar_nuevo_dato(p, e, k); st.success("¡Guardado!"); st.rerun()
                     except Exception as e: st.error(f"Error: {e}")
 
     df = cargar_ranking()
     if not df.empty and "Peso (kg)" in df.columns:
-        st.markdown("### 🥇 PODIO ACTUAL")
+        st.markdown("### 🥇 PODIO")
         try:
             top = df.sort_values(by="Peso (kg)", ascending=False).head(3).reset_index(drop=True)
             c1, c2, c3 = st.columns(3)
-            # Usamos metricas personalizadas
             if len(top)>0: c1.metric("🥇 ORO", f"{top.iloc[0]['Peso (kg)']}kg", top.iloc[0]['Pescador'])
             if len(top)>1: c2.metric("🥈 PLATA", f"{top.iloc[1]['Peso (kg)']}kg", top.iloc[1]['Pescador'])
             if len(top)>2: c3.metric("🥉 BRONCE", f"{top.iloc[2]['Peso (kg)']}kg", top.iloc[2]['Pescador'])
@@ -243,7 +251,7 @@ elif menu == "🏆 Ranking Capturas":
         st.markdown("---")
         st.subheader("📝 Tabla Editable")
         df_edit = st.data_editor(df, num_rows="dynamic", use_container_width=True, key="editor")
-        if st.button("🔄 SINCRONIZAR CAMBIOS"):
+        if st.button("🔄 ACTUALIZAR GOOGLE SHEETS"):
             with st.spinner("Guardando..."): actualizar_toda_la_hoja(df_edit)
             st.success("✅ Actualizado"); st.rerun()
         
