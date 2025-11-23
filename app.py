@@ -28,32 +28,44 @@ ESPECIES = [
     "Jurel", "Oblada", "Dentón", "Baila"
 ]
 
-# --- CONEXIÓN GOOGLE SHEETS (V18 - LECTURA SEGURA DE INFO) ---
+# --- CONEXIÓN GOOGLE SHEETS (V19 - INTELIGENTE / TODOTERRENO) ---
 def conectar_sheet():
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         
-        # 1. Recuperamos el bloque de texto "info" de los secrets
-        if "gcp_service_account" in st.secrets and "info" in st.secrets["gcp_service_account"]:
-            json_texto = st.secrets["gcp_service_account"]["info"]
-            # 2. Lo convertimos en diccionario
+        # 1. Comprobamos si existen los secrets
+        if "gcp_service_account" not in st.secrets:
+            st.error("❌ No encuentro [gcp_service_account] en tus Secrets.")
+            st.stop()
+            
+        secrets_section = st.secrets["gcp_service_account"]
+
+        # 2. DETECTOR AUTOMÁTICO DE FORMATO
+        # Opción A: ¿Usaste el método del bloque 'info'?
+        if "info" in secrets_section:
+            json_texto = secrets_section["info"]
             creds_dict = json.loads(json_texto)
+        
+        # Opción B: ¿Usaste el método de pegar los datos sueltos (type, project_id...)?
+        elif "type" in secrets_section and secrets_section["type"] == "service_account":
+            creds_dict = secrets_section
+            
         else:
-            st.error("⚠️ Error en Secrets: Falta la estructura [gcp_service_account] info = \"\"\" ... \"\"\"")
+            st.error("❌ Formato de Secrets no reconocido. Asegúrate de haber pegado el JSON.")
             st.stop()
         
         # 3. Conectamos
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         
-        # 4. Abrimos la hoja (la primera que encuentre, hoja 0)
+        # 4. Abrimos la PRIMERA hoja (se llame como se llame)
         return client.open("RankingPesca").get_worksheet(0)
         
     except Exception as e:
-        st.error(f"❌ Error conectando con Google: {e}")
+        st.error(f"❌ Error técnico conectando con Google: {e}")
         st.stop()
 
-# --- FUNCIONES ---
+# --- FUNCIONES CLIMA ---
 def obtener_datos(lat, lon, fecha_str):
     try:
         url_clima = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=wind_speed_10m,wind_direction_10m&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
@@ -68,6 +80,7 @@ def calcular_direccion(grados):
     elif 225 <= grados <= 315: return "Poniente (O)"
     return "Var."
 
+# --- FUNCIONES RANKING ---
 def cargar_ranking():
     try:
         sheet = conectar_sheet()
