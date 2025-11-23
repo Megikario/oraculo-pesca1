@@ -28,18 +28,26 @@ ESPECIES = [
     "Jurel", "Oblada", "Dentón", "Baila"
 ]
 
-# --- CONEXIÓN GOOGLE SHEETS (VERSIÓN FÁCIL) ---
+# --- CONEXIÓN GOOGLE SHEETS (V15 - SINCRONIZADA) ---
 def conectar_sheet():
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        # Leemos el JSON pegado en secrets como texto
-        json_creds = json.loads(st.secrets["gcp_json"])
         
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(json_creds, scope)
+        # AQUÍ ESTÁ LA CLAVE: Buscamos exactamente lo que pusimos en Secrets
+        if "gcp_service_account" in st.secrets and "info" in st.secrets["gcp_service_account"]:
+            # Método Nuevo (Bloque de texto)
+            json_texto = st.secrets["gcp_service_account"]["info"]
+            creds_dict = json.loads(json_texto)
+        else:
+            # Por si acaso pusiste el método antiguo
+            st.error("❌ Error de configuración en Secrets. Asegúrate de usar el formato [gcp_service_account] info = \"\"\" ... \"\"\"")
+            st.stop()
+        
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         return client.open("RankingPesca").sheet1
     except Exception as e:
-        st.error(f"❌ Error conectando con Google. Revisa los Secrets. Detalle: {e}")
+        st.error(f"❌ Error conectando con Google: {e}")
         st.stop()
 
 # --- FUNCIONES ---
@@ -113,12 +121,13 @@ if menu == "🔮 El Oráculo":
                 em = "🌊 Agitado" if oh>=0.4 else "💎 Planchado"
                 
                 prev = tides[h-1] if h>0 else mh
-                sig = tides[h+1] if h<23 else mh
+                sig = tides[h+1] if h < 23 else mh
                 if mh>prev and mh>sig: te="🛑 PLEAMAR"; val="⛔ PARADA"
                 elif mh<prev and mh<sig: te="🛑 BAJAMAR"; val="⛔ PARADA"
                 elif sig>mh: te="⬆️ SUBIENDO"; val="✅ BUENA"
                 else: te="⬇️ BAJANDO"; val="⚠️ REGULAR"
                 tp = "🌊 CORTA (Alta)" if mh>=0.6 else "🏖️ LARGA (Baja)"
+                
                 res.append({"HORA":f"{h}:00", "VIENTO":f"{vv} {dt}", "OLAS":f"{oh}m", "AGUA":ag, "TIPO PLAYA":tp, "MAREA":te, "VAL.":val})
             st.dataframe(pd.DataFrame(res), use_container_width=True, hide_index=True)
 
