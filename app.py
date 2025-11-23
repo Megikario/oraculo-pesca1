@@ -6,15 +6,16 @@ import gspread
 import json
 from oauth2client.service_account import ServiceAccountCredentials
 
-# --- CONFIGURACIÓN INICIAL (Título de la pestaña actualizado) ---
-st.set_page_config(page_title="Previsión Pesca & Ranking", page_icon="🦈", layout="wide")
+# --- CONFIGURACIÓN INICIAL ---
+st.set_page_config(page_title="Previsión Pesca & Ranking", page_icon="🎣", layout="wide")
 
 # ==============================================================================
-# 🎨 SECCIÓN DE ESTILO (CSS)
+# 🎨 SECCIÓN DE ESTILO (CSS) - NUEVO FONDO AQUÍ
 # ==============================================================================
 def configurar_estilo():
-    # IMAGEN DE FONDO: Banco de atunes (La que pediste)
-    imagen_fondo = "https://images.unsplash.com/photo-1544551763-46a013bb70d5?q=80&w=2070&auto=format&fit=crop"
+    # IMAGEN DE FONDO: Playa de arena negra volcánica (Canarias)
+    # Si prefieres quitar el fondo y dejarlo liso, borra la línea que empieza por background-image dentro de .stApp
+    imagen_fondo = "https://images.unsplash.com/photo-1617115183875-54b5735407c?q=80&w=2070&auto=format&fit=crop"
     
     st.markdown(f"""
     <style>
@@ -23,38 +24,38 @@ def configurar_estilo():
         background-image: url("{imagen_fondo}");
         background-attachment: fixed;
         background-size: cover;
-        background-position: center;
+        background-position: center center;
     }}
 
     /* 2. BARRA LATERAL (SIDEBAR) */
     [data-testid="stSidebar"] {{
-        background-color: rgba(0, 10, 30, 0.9); /* Azul casi negro */
+        background-color: rgba(20, 20, 20, 0.9); /* Negro volcánico casi opaco */
         border-right: 1px solid rgba(255, 255, 255, 0.1);
     }}
     
-    /* 3. TEXTOS (BLANCO CON SOMBRA FUERTE PARA LEER BIEN) */
+    /* 3. TEXTOS (BLANCO CON SOMBRA FUERTE) */
     h1, h2, h3, h4, p, label, .stMarkdown, div {{
         color: #FFFFFF !important;
-        text-shadow: 0px 0px 5px #000000, 0px 0px 10px #000000; /* Doble sombra */
+        text-shadow: 0px 0px 8px #000000, 0px 0px 4px #000000; /* Sombra para resaltar sobre la arena oscura */
     }}
     
     /* 4. BOTONES */
     div.stButton > button {{
-        background-color: #007EA7;
+        background-color: #FF8C00; /* Naranja atardecer para que destaque en la arena negra */
         color: white;
-        border: 2px solid #003459;
+        border: none;
         border-radius: 8px;
         font-weight: bold;
     }}
     div.stButton > button:hover {{
-        background-color: #00A8E8;
-        border-color: white;
+        background-color: #FFA500;
+        transform: scale(1.02);
     }}
 
     /* 5. CAJAS DE DATOS (METRICAS) */
     [data-testid="stMetricValue"] {{
-        color: #4CC9F0 !important; /* Azul eléctrico */
-        text-shadow: 2px 2px 0px #000000;
+        color: #FFD700 !important; /* Amarillo/Dorado */
+        text-shadow: 2px 2px 2px #000000;
     }}
     [data-testid="stMetricLabel"] {{
         color: #E0E0E0 !important;
@@ -62,7 +63,7 @@ def configurar_estilo():
 
     /* 6. TABLAS (FONDO OSCURO) */
     .stDataFrame, [data-testid="stDataFrame"] {{
-        background-color: rgba(0, 0, 0, 0.7);
+        background-color: rgba(0, 0, 0, 0.8); /* Fondo muy oscuro para las tablas */
         border-radius: 10px;
         padding: 10px;
     }}
@@ -94,7 +95,6 @@ def conectar_sheet():
         if "gcp_service_account" not in st.secrets:
             st.error("❌ Falta Secrets."); st.stop()
         
-        # Lógica inteligente para detectar formato
         secrets_section = st.secrets["gcp_service_account"]
         if "info" in secrets_section:
             creds_dict = json.loads(secrets_section["info"])
@@ -160,7 +160,6 @@ def actualizar_toda_la_hoja(df_nuevo):
 menu = st.sidebar.radio("Navegación", ["🔮 Previsión Pesca", "🏆 Ranking Capturas"])
 
 if menu == "🔮 Previsión Pesca":
-    # --- TÍTULO CAMBIADO AQUÍ ---
     st.markdown("<h1 style='text-align: center; color: white;'>🌊 Previsión Pesca</h1>", unsafe_allow_html=True)
     st.markdown("---")
     
