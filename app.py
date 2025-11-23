@@ -10,60 +10,66 @@ from oauth2client.service_account import ServiceAccountCredentials
 st.set_page_config(page_title="Previsión Pesca & Ranking", page_icon="🎣", layout="wide")
 
 # ==============================================================================
-# 🎨 SECCIÓN DE ESTILO (CSS) - NUEVO FONDO AQUÍ
+# 🎨 SECCIÓN DE ESTILO (CSS) - ARREGLADO
 # ==============================================================================
 def configurar_estilo():
-    # IMAGEN DE FONDO: Playa de arena negra volcánica (Canarias)
-    # Si prefieres quitar el fondo y dejarlo liso, borra la línea que empieza por background-image dentro de .stApp
-    imagen_fondo = "https://images.unsplash.com/photo-1617115183875-54b5735407c?q=80&w=2070&auto=format&fit=crop"
+    # IMAGEN DE FONDO: Playa Volcánica (Enlace estable)
+    imagen_fondo = "https://images.unsplash.com/photo-1476673132135-53a987faa35f?q=80&w=2070&auto=format&fit=crop"
     
     st.markdown(f"""
     <style>
-    /* 1. FONDO DE PANTALLA */
-    .stApp {{
+    /* 1. FONDO DE PANTALLA (FORZADO) */
+    [data-testid="stAppViewContainer"] {{
         background-image: url("{imagen_fondo}");
-        background-attachment: fixed;
         background-size: cover;
-        background-position: center center;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+    }}
+    
+    /* 2. CABECERA TRANSPARENTE */
+    [data-testid="stHeader"] {{
+        background-color: rgba(0,0,0,0);
     }}
 
-    /* 2. BARRA LATERAL (SIDEBAR) */
+    /* 3. BARRA LATERAL (SIDEBAR) */
     [data-testid="stSidebar"] {{
-        background-color: rgba(20, 20, 20, 0.9); /* Negro volcánico casi opaco */
+        background-color: rgba(10, 10, 15, 0.9);
         border-right: 1px solid rgba(255, 255, 255, 0.1);
     }}
     
-    /* 3. TEXTOS (BLANCO CON SOMBRA FUERTE) */
-    h1, h2, h3, h4, p, label, .stMarkdown, div {{
+    /* 4. TEXTOS (BLANCO CON SOMBRA FUERTE) */
+    h1, h2, h3, h4, p, label, .stMarkdown, div, span {{
         color: #FFFFFF !important;
-        text-shadow: 0px 0px 8px #000000, 0px 0px 4px #000000; /* Sombra para resaltar sobre la arena oscura */
+        text-shadow: 0px 0px 10px #000000;
     }}
     
-    /* 4. BOTONES */
+    /* 5. BOTONES */
     div.stButton > button {{
-        background-color: #FF8C00; /* Naranja atardecer para que destaque en la arena negra */
+        background-color: #E63946; /* Rojo intenso para destacar */
         color: white;
         border: none;
         border-radius: 8px;
         font-weight: bold;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
     }}
     div.stButton > button:hover {{
-        background-color: #FFA500;
+        background-color: #FF4D5A;
         transform: scale(1.02);
     }}
 
-    /* 5. CAJAS DE DATOS (METRICAS) */
+    /* 6. CAJAS DE DATOS (METRICAS) */
     [data-testid="stMetricValue"] {{
-        color: #FFD700 !important; /* Amarillo/Dorado */
-        text-shadow: 2px 2px 2px #000000;
+        color: #FFD700 !important; /* Dorado */
+        text-shadow: 2px 2px 0px #000000;
     }}
     [data-testid="stMetricLabel"] {{
         color: #E0E0E0 !important;
     }}
 
-    /* 6. TABLAS (FONDO OSCURO) */
+    /* 7. TABLAS (FONDO OSCURO) */
     .stDataFrame, [data-testid="stDataFrame"] {{
-        background-color: rgba(0, 0, 0, 0.8); /* Fondo muy oscuro para las tablas */
+        background-color: rgba(0, 0, 0, 0.85);
         border-radius: 10px;
         padding: 10px;
     }}
