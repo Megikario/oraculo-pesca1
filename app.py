@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 from datetime import datetime
 import gspread
+import json
 from oauth2client.service_account import ServiceAccountCredentials
 
 # --- CONFIGURACIÓN ---
@@ -38,7 +39,6 @@ def conectar_sheet():
 
 # --- FUNCIONES METEOROLÓGICAS ---
 def icono_tiempo(code):
-    # Códigos WMO de Open-Meteo
     if code == 0: return "☀️ Despejado"
     if code in [1, 2, 3]: return "⛅ Nuboso"
     if code in [45, 48]: return "🌫️ Niebla"
@@ -48,16 +48,9 @@ def icono_tiempo(code):
 
 def obtener_datos(lat, lon, fecha_str):
     try:
-        # 1. CLIMA (Aire + Icono Cielo)
         url_clima = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=wind_speed_10m,wind_direction_10m,temperature_2m,weather_code&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
-        
-        # 2. MARINA (Olas + Temp Agua)
-        # 'sea_surface_temperature' es la temperatura del agua
         url_olas = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat}&longitude={lon}&hourly=wave_height,sea_surface_temperature&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
-        
-        # 3. MAREA
         url_marea = f"https://marine-api.open-meteo.com/v1/marine?latitude={LAT_MAREA_REF}&longitude={LON_MAREA_REF}&hourly=tide_height&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
-        
         return requests.get(url_clima).json(), requests.get(url_olas).json(), requests.get(url_marea).json()
     except: return None, None, None
 
@@ -109,7 +102,6 @@ if menu == "🔮 El Oráculo":
             
             if not clima: st.error("Error conexión"); st.stop()
             
-            # Preparamos datos auxiliares de seguridad
             tides = [0]*24
             if marea and 'hourly' in marea: tides = marea['hourly']['tide_height']
             
@@ -117,43 +109,31 @@ if menu == "🔮 El Oráculo":
             for h in range(horas[0], horas[1]+1):
                 if h>=24: break
                 try:
-                    # Viento y Dirección
                     vv = clima['hourly']['wind_speed_10m'][h]
                     vd = clima['hourly']['wind_direction_10m'][h]
                     dt = calcular_direccion(vd)
-                    
-                    # Temperatura Aire y Cielo
                     temp_aire = clima['hourly']['temperature_2m'][h]
                     cod_cielo = clima['hourly']['weather_code'][h]
                     txt_cielo = icono_tiempo(cod_cielo)
-                    
-                    # Olas y Temperatura Agua (Puede fallar si no hay datos marinos exactos)
                     oh = olas['hourly']['wave_height'][h] if olas['hourly']['wave_height'][h] else 0.0
                     temp_agua = olas['hourly']['sea_surface_temperature'][h] if olas['hourly']['sea_surface_temperature'][h] else "--"
-                    
-                    # Marea
                     mh = tides[h]
                 except: continue
                 
-                # Lógica colores
                 ag = "🟤 Turbia" if (oh>0.6 and "Levante" in dt) else ("🔵 Clara" if ("Poniente" in dt or oh<0.3) else "⚪ Variable")
-                em = "🌊 Agitado" if oh>=0.4 else "💎 Planchado"
-                
                 prev = tides[h-1] if h>0 else mh
                 sig = tides[h+1] if h < 23 else mh
                 if mh>prev and mh>sig: te="🛑 PLEAMAR"
                 elif mh<prev and mh<sig: te="🛑 BAJAMAR"
                 elif sig>mh: te="⬆️ SUBIENDO"
                 else: te="⬇️ BAJANDO"
-                
                 tp = "🌊 CORTA (Alta)" if mh>=0.6 else "🏖️ LARGA (Baja)"
                 
-                # --- NUEVA COLUMNA COMBINADA ---
                 info_clima = f"{txt_cielo} {temp_aire}°C  |  💧Agua: {temp_agua}°C"
 
                 res.append({
                     "HORA": f"{h}:00", 
-                    "CLIMA (Aire | Agua)": info_clima, # <--- NUEVA COLUMNA
+                    "CLIMA": info_clima,
                     "VIENTO": f"{vv} {dt}", 
                     "OLAS": f"{oh}m", 
                     "AGUA": ag, 
@@ -162,6 +142,11 @@ if menu == "🔮 El Oráculo":
                 })
             
             st.dataframe(pd.DataFrame(res), use_container_width=True, hide_index=True)
+            
+            # --- AQUÍ ESTÁ EL MAPA (RECUPERADO) ---
+            st.markdown("---")
+            st.caption(f"📍 Ubicación exacta de la previsión: {z_nom}")
+            st.map(pd.DataFrame({'lat': [lat], 'lon': [lon]}), zoom=12)
 
 elif menu == "🏆 Ranking Capturas":
     st.title("🏆 Liga de Pesca (Nube)")
