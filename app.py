@@ -1,19 +1,4 @@
-¡Claro! Es fundamental poder corregir errores (por si alguien se emociona y pone un 0 de más en el peso 😂).
 
-Para hacer esto de la forma más moderna y cómoda posible, vamos a usar una herramienta nueva de Streamlit llamada data_editor.
-
-¿Qué hace esto? Convierte la tabla de capturas en un Excel editable.
-
-Podrás hacer clic en una celda y cambiar el peso o el nombre.
-
-Podrás seleccionar filas y borrarlas con la tecla "Supr" o un icono de papelera.
-
-Luego le das a un botón de "Guardar Cambios" y listo.
-
-Aquí tienes la Versión 10 (Con Editor de Tabla).
-
-Copia y pega todo en tu app.py:
-Python
 
 import streamlit as st
 import requests
