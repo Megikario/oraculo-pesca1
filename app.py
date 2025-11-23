@@ -1,10 +1,10 @@
-
-
 import streamlit as st
 import requests
 import pandas as pd
 from datetime import datetime
-import os
+import gspread
+import json
+from oauth2client.service_account import ServiceAccountCredentials
 
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="Oráculo & Ranking", page_icon="🎣", layout="wide")
@@ -27,7 +27,20 @@ ESPECIES = [
     "Barracuda (Espetón)", "Palometa (Blanca)", "Sepia", "Pulpo", 
     "Jurel", "Oblada", "Dentón", "Baila"
 ]
-ARCHIVO_RANKING = "ranking.csv"
+
+# --- CONEXIÓN GOOGLE SHEETS (VERSIÓN FÁCIL) ---
+def conectar_sheet():
+    try:
+        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        # Leemos el JSON pegado en secrets como texto
+        json_creds = json.loads(st.secrets["gcp_json"])
+        
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(json_creds, scope)
+        client = gspread.authorize(creds)
+        return client.open("RankingPesca").sheet1
+    except Exception as e:
+        st.error(f"❌ Error conectando con Google. Revisa los Secrets. Detalle: {e}")
+        st.stop()
 
 # --- FUNCIONES ---
 def obtener_datos(lat, lon, fecha_str):
@@ -45,151 +58,106 @@ def calcular_direccion(grados):
     return "Var."
 
 def cargar_ranking():
-    if not os.path.exists(ARCHIVO_RANKING):
+    try:
+        sheet = conectar_sheet()
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+        if not df.empty:
+            df['Peso (kg)'] = pd.to_numeric(df['Peso (kg)'], errors='coerce')
+        return df
+    except:
         return pd.DataFrame(columns=["Fecha", "Pescador", "Especie", "Peso (kg)"])
-    return pd.read_csv(ARCHIVO_RANKING)
 
-def guardar_captura(pescador, especie, peso):
-    df = cargar_ranking()
-    nueva_fila = pd.DataFrame([{
-        "Fecha": datetime.now().strftime("%Y-%m-%d"),
-        "Pescador": pescador,
-        "Especie": especie,
-        "Peso (kg)": peso
-    }])
-    df = pd.concat([df, nueva_fila], ignore_index=True)
-    df.to_csv(ARCHIVO_RANKING, index=False)
-    return df
+def guardar_nuevo_dato(pescador, especie, peso):
+    sheet = conectar_sheet()
+    fecha = datetime.now().strftime("%Y-%m-%d")
+    sheet.append_row([fecha, pescador, especie, peso])
 
-def actualizar_ranking_completo(nuevo_df):
-    nuevo_df.to_csv(ARCHIVO_RANKING, index=False)
+def actualizar_toda_la_hoja(df_nuevo):
+    sheet = conectar_sheet()
+    sheet.clear()
+    datos = [df_nuevo.columns.values.tolist()] + df_nuevo.values.tolist()
+    sheet.update(datos)
 
 # --- MENÚ LATERAL ---
-menu = st.sidebar.radio("Navegación", ["🔮 El Oráculo (Previsión)", "🏆 Ranking Capturas"])
+menu = st.sidebar.radio("Navegación", ["🔮 El Oráculo", "🏆 Ranking Capturas"])
 
-# ==============================================================================
-# PANTALLA 1: EL ORÁCULO
-# ==============================================================================
-if menu == "🔮 El Oráculo (Previsión)":
+if menu == "🔮 El Oráculo":
     st.title("🌊 Oráculo de Pesca: El Saler")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        zona_nombre = st.selectbox("📍 Zona:", list(ZONAS.keys()))
-    with col2:
-        fecha = st.date_input("📅 Fecha:", datetime.now())
-    with col3:
-        horas = st.slider("🕒 Horas:", 0, 23, (6, 12))
-
-    lat_zona = ZONAS[zona_nombre]["lat"]
-    lon_zona = ZONAS[zona_nombre]["lon"]
+    c1, c2, c3 = st.columns(3)
+    with c1: z_nom = st.selectbox("📍 Zona:", list(ZONAS.keys()))
+    with c2: fecha = st.date_input("📅 Fecha:", datetime.now())
+    with c3: horas = st.slider("🕒 Horas:", 0, 23, (6, 12))
 
     if st.button("🚀 VER PREVISIÓN"):
+        lat, lon = ZONAS[z_nom]["lat"], ZONAS[z_nom]["lon"]
         fecha_str = fecha.strftime('%Y-%m-%d')
-        with st.spinner('Consultando satélites...'):
-            clima, olas_data, marea = obtener_datos(lat_zona, lon_zona, fecha_str)
-            
-            if not clima or not olas_data:
-                st.error("Error de conexión.")
-                st.stop()
-
+        with st.spinner('Calculando...'):
+            clima, olas, marea = obtener_datos(lat, lon, fecha_str)
+            if not clima: st.error("Error conexión"); st.stop()
             tides = [0]*24
             if marea and 'hourly' in marea: tides = marea['hourly']['tide_height']
             
-            resultados = []
-            for h in range(horas[0], horas[1] + 1):
-                if h >= 24: break
+            res = []
+            for h in range(horas[0], horas[1]+1):
+                if h>=24: break
                 try:
-                    v_vel = clima['hourly']['wind_speed_10m'][h]
-                    v_dir = clima['hourly']['wind_direction_10m'][h]
-                    ola_h = olas_data['hourly']['wave_height'][h] if olas_data['hourly']['wave_height'][h] else 0.0
-                    marea_h = tides[h]
+                    vv = clima['hourly']['wind_speed_10m'][h]
+                    vd = clima['hourly']['wind_direction_10m'][h]
+                    oh = olas['hourly']['wave_height'][h] if olas['hourly']['wave_height'][h] else 0.0
+                    mh = tides[h]
                 except: continue
                 
-                dir_txt = calcular_direccion(v_dir)
-                if ola_h > 0.6 and "Levante" in dir_txt: agua = "🟤 Turbia"
-                elif "Poniente" in dir_txt or ola_h < 0.3: agua = "🔵 Clara"
-                else: agua = "⚪ Variable"
+                dt = calcular_direccion(vd)
+                ag = "🟤 Turbia" if (oh>0.6 and "Levante" in dt) else ("🔵 Clara" if ("Poniente" in dt or oh<0.3) else "⚪ Variable")
+                em = "🌊 Agitado" if oh>=0.4 else "💎 Planchado"
                 
-                estado_mar = "🌊 Agitado" if ola_h >= 0.4 else "💎 Planchado"
-                
-                prev = tides[h-1] if h > 0 else marea_h
-                sig = tides[h+1] if h < 23 else marea_h
-                
-                if marea_h > prev and marea_h > sig: tend = "🛑 PLEAMAR"; val = "⛔ PARADA"
-                elif marea_h < prev and marea_h < sig: tend = "🛑 BAJAMAR"; val = "⛔ PARADA"
-                elif sig > marea_h: tend = "⬆️ SUBIENDO"; val = "✅ BUENA"
-                else: tend = "⬇️ BAJANDO"; val = "⚠️ REGULAR"
-                
-                tipo_playa = "🌊 CORTA (Alta)" if marea_h >= 0.6 else "🏖️ LARGA (Baja)"
-                
-                resultados.append({
-                    "HORA": f"{h}:00", "VIENTO": f"{v_vel} {dir_txt}", "OLAS": f"{ola_h}m",
-                    "AGUA": agua, "TIPO PLAYA": tipo_playa, "MAREA": tend, "VAL.": val
-                })
-            
-            st.dataframe(pd.DataFrame(resultados), use_container_width=True, hide_index=True)
+                prev = tides[h-1] if h>0 else mh
+                sig = tides[h+1] if h<23 else mh
+                if mh>prev and mh>sig: te="🛑 PLEAMAR"; val="⛔ PARADA"
+                elif mh<prev and mh<sig: te="🛑 BAJAMAR"; val="⛔ PARADA"
+                elif sig>mh: te="⬆️ SUBIENDO"; val="✅ BUENA"
+                else: te="⬇️ BAJANDO"; val="⚠️ REGULAR"
+                tp = "🌊 CORTA (Alta)" if mh>=0.6 else "🏖️ LARGA (Baja)"
+                res.append({"HORA":f"{h}:00", "VIENTO":f"{vv} {dt}", "OLAS":f"{oh}m", "AGUA":ag, "TIPO PLAYA":tp, "MAREA":te, "VAL.":val})
+            st.dataframe(pd.DataFrame(res), use_container_width=True, hide_index=True)
 
-# ==============================================================================
-# PANTALLA 2: RANKING CAPTURAS
-# ==============================================================================
 elif menu == "🏆 Ranking Capturas":
-    st.title("🏆 Hall of Fame: Liga de Pesca")
+    st.title("🏆 Liga de Pesca (Nube)")
     
-    # --- FORMULARIO DE REGISTRO ---
-    with st.expander("📝 REGISTRAR NUEVA CAPTURA (Click aquí)", expanded=False):
+    with st.expander("📝 AÑADIR NUEVA CAPTURA"):
         c1, c2 = st.columns(2)
         with c1:
-            pescador_input = st.selectbox("👤 ¿Quién eres?", PESCADORES)
-            especie_input = st.selectbox("🐟 Especie:", ESPECIES)
+            p = st.selectbox("👤 Pescador", PESCADORES)
+            e = st.selectbox("🐟 Especie", ESPECIES)
         with c2:
-            peso_input = st.number_input("⚖️ Peso (kg):", min_value=0.0, step=0.1, format="%.2f")
-            boton_guardar = st.button("💾 Guardar Captura")
-        
-        if boton_guardar:
-            if peso_input > 0:
-                guardar_captura(pescador_input, especie_input, peso_input)
-                st.success(f"¡Registrado!")
-                st.rerun() # Recarga la página para mostrar el dato nuevo
-            else:
-                st.error("❌ El peso tiene que ser mayor que 0.")
+            k = st.number_input("⚖️ Peso (kg)", 0.0, step=0.1, format="%.2f")
+            if st.button("💾 Añadir"):
+                if k > 0:
+                    guardar_nuevo_dato(p, e, k)
+                    st.success("Guardado!"); st.rerun()
 
-    # --- MOSTRAR DATOS ---
-    df_ranking = cargar_ranking()
-    
-    if not df_ranking.empty:
-        # 1. EL PODIO
-        st.markdown("### 🥇 TOP 3 PIEZAS MAYORES")
-        df_sorted = df_ranking.sort_values(by="Peso (kg)", ascending=False).head(3).reset_index(drop=True)
-        col_oro, col_plata, col_bronce = st.columns(3)
-        if len(df_sorted) > 0: col_oro.metric("🥇 ORO", f"{df_sorted.iloc[0]['Peso (kg)']} kg", f"{df_sorted.iloc[0]['Pescador']}")
-        if len(df_sorted) > 1: col_plata.metric("🥈 PLATA", f"{df_sorted.iloc[1]['Peso (kg)']} kg", f"{df_sorted.iloc[1]['Pescador']}")
-        if len(df_sorted) > 2: col_bronce.metric("🥉 BRONCE", f"{df_sorted.iloc[2]['Peso (kg)']} kg", f"{df_sorted.iloc[2]['Pescador']}")
+    df = cargar_ranking()
+    if not df.empty:
+        st.markdown("### 🥇 TOP 3")
+        top = df.sort_values(by="Peso (kg)", ascending=False).head(3).reset_index(drop=True)
+        c1, c2, c3 = st.columns(3)
+        if len(top)>0: c1.metric("🥇", f"{top.iloc[0]['Peso (kg)']}kg", top.iloc[0]['Pescador'])
+        if len(top)>1: c2.metric("🥈", f"{top.iloc[1]['Peso (kg)']}kg", top.iloc[1]['Pescador'])
+        if len(top)>2: c3.metric("🥉", f"{top.iloc[2]['Peso (kg)']}kg", top.iloc[2]['Pescador'])
 
-        # 2. EDITOR DE TABLA (LO NUEVO)
         st.markdown("---")
-        st.subheader("📊 Historial y Edición")
-        st.info("💡 **Tip:** Haz doble click en una celda para editar el peso o el nombre. Selecciona una fila y pulsa 'Supr' (o el icono de papelera) para borrarla.")
+        st.subheader("📝 Editar o Borrar")
+        st.info("Edita las celdas o borra filas (tecla Supr) y dale al botón de abajo.")
         
-        # TABLA EDITABLE
-        df_editado = st.data_editor(
-            df_ranking, 
-            num_rows="dynamic", 
-            use_container_width=True,
-            key="editor_datos"
-        )
+        df_edit = st.data_editor(df, num_rows="dynamic", use_container_width=True, key="editor")
 
-        # Botón para guardar los cambios hechos en la tabla
-        if st.button("💾 GUARDAR CAMBIOS DE LA TABLA"):
-            actualizar_ranking_completo(df_editado)
-            st.success("✅ Tabla actualizada correctamente.")
-            st.rerun()
-
-        # 3. ESTADÍSTICAS
+        if st.button("🔄 ACTUALIZAR GOOGLE SHEETS"):
+            with st.spinner("Sincronizando..."):
+                actualizar_toda_la_hoja(df_edit)
+            st.success("✅ Guardado en Drive"); st.rerun()
+            
         st.markdown("---")
-        st.subheader("🎣 Total Kilos por Pescador")
-        df_stats = df_ranking.groupby("Pescador")["Peso (kg)"].sum().sort_values(ascending=False)
-        st.bar_chart(df_stats)
-        
+        st.bar_chart(df.groupby("Pescador")["Peso (kg)"].sum())
     else:
-        st.info("Todavía no hay capturas registradas.")
+        st.warning("Conectado a Google Sheets, pero la hoja está vacía.")
