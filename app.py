@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 from datetime import datetime
 
-# --- CONFIGURACIÓN V4 (Anti-Fallos) ---
+# --- CONFIGURACIÓN V5 (Corregida) ---
 st.set_page_config(page_title="Oráculo El Saler", page_icon="🎣")
 
 LAT_PESCA = 39.37
@@ -13,27 +13,26 @@ LON_MAREA = -0.30
 
 # --- FUNCIONES ---
 def obtener_datos_marea(fecha_str):
-    # TRUCO V4: Simplificamos la petición al máximo para evitar errores del servidor
+    # Si falla la marea, devolvemos None silenciosamente para no romper la app
     url = f"https://marine-api.open-meteo.com/v1/marine?latitude={LAT_MAREA}&longitude={LON_MAREA}&hourly=tide_height&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
     try:
         resp = requests.get(url)
-        if resp.status_code != 200:
-            return None # Si falla, devolvemos "vacío" silenciosamente
+        if resp.status_code != 200: return None
         return resp.json()['hourly']['tide_height']
     except:
         return None
 
 def obtener_datos_clima(fecha_str):
-    url_clima = f"https://api.open-meteo.com/v1/forecast?latitude={LAT_PESCA}&longitude={LON_PESCA}&hourly=wind_speed_10m,wind_direction_10m&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
-    url_olas = f"https://marine-api.open-meteo.com/v1/marine?latitude={LAT_PESCA}&longitude={LON_PESCA}&hourly=wave_height&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
     try:
+        url_clima = f"https://api.open-meteo.com/v1/forecast?latitude={LAT_PESCA}&longitude={LON_PESCA}&hourly=wind_speed_10m,wind_direction_10m&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
+        url_olas = f"https://marine-api.open-meteo.com/v1/marine?latitude={LAT_PESCA}&longitude={LON_PESCA}&hourly=wave_height&timezone=Europe%2FMadrid&start_date={fecha_str}&end_date={fecha_str}"
         return requests.get(url_clima).json(), requests.get(url_olas).json()
     except:
         return None, None
 
 # --- INTERFAZ ---
 st.title("🎣 Oráculo de Pesca: El Saler")
-st.caption("Versión 4: Estabilidad Máxima")
+st.caption("Versión 5: Sin Errores")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -52,22 +51,25 @@ if st.button("🔮 ANALIZAR JORNADA"):
             st.error("❌ Error de conexión total. Inténtalo luego.")
             st.stop()
 
+        # Si no hay marea, creamos una lista vacía de seguridad
+        sin_marea = False
         if not marea_data:
-            st.warning("⚠️ El servidor de mareas está en mantenimiento, pero aquí tienes el Viento y el Agua:")
-            marea_data = [0] * 24 # Relleno invisible
+            sin_marea = True
+            st.warning("⚠️ Servidor de Mareas ocupado. Mostrando Viento y Olas:")
+            marea_data = [0] * 24 
 
         resultados = []
         for h in range(horas[0], horas[1] + 1):
             if h >= 24: break
             
-            # Clima (Esto es lo fiable hoy)
+            # 1. Clima
             try:
                 viento = clima_data['hourly']['wind_speed_10m'][h]
                 dir_v = clima_data['hourly']['wind_direction_10m'][h]
                 olas = olas_data['hourly']['wave_height'][h] if olas_data['hourly']['wave_height'][h] else 0.0
             except: continue
 
-            # Claridad (Tu regla de oro)
+            # 2. Claridad
             if 45 <= dir_v <= 135: dir_txt = "Levante (E)"
             elif 225 <= dir_v <= 315: dir_txt = "Poniente (O)"
             else: dir_txt = "Var."
@@ -76,9 +78,9 @@ if st.button("🔮 ANALIZAR JORNADA"):
             elif "Poniente" in dir_txt or olas < 0.3: claridad = "🔵 Clara"
             else: claridad = "⚪ Variable"
 
-            # Marea (Solo si funciona)
+            # 3. Marea (Solo si hay datos reales)
             estado_marea = "--"
-            if marea_data[0] != 0:
+            if not sin_marea:
                 try:
                     actual = marea_data[h]
                     sig = marea_data[h+1] if h < 23 else actual
@@ -90,17 +92,16 @@ if st.button("🔮 ANALIZAR JORNADA"):
                     else: estado_marea = "⚠️ BAJANDO"
                 except: pass
 
+            # AÑADIR A LA TABLA (Aquí estaba el fallo antes)
             resultados.append({
                 "Hora": f"{h}:00",
                 "Viento": f"{viento} km/h {dir_txt}",
                 "Olas": f"{olas} m",
-                "Agua": clarity,
+                "Agua": claridad,   # <--- CORREGIDO
                 "Marea": estado_marea
             })
-            # Pequeño fix para variable clarity mal escrita arriba
-            resultados[-1]["Agua"] = claridad 
 
         st.dataframe(pd.DataFrame(resultados), use_container_width=True)
         
-        if marea_data[0] == 0:
-            st.info("💡 **Consejo:** Aunque falle la marea, con Poniente y olas de 0.4m el agua estará cristalina.")
+        if sin_marea:
+            st.info("💡 **Consejo:** Aunque falte la marea, guíate por el AGUA. Si sale 'Clara', ve a pescar.")
